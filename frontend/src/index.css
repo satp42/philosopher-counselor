@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f4efe6;
+  --color-ink: #26221d;
+  --color-muted: #6a6257;
+  --color-line: #ddd4c4;
+  --color-line-strong: #857c70;
+  --color-accent: #7a4a2b;
+  --color-danger: #9b2c22;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease-out-soft: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Type roles in rem so the reader's browser font size applies. */
+  --text-ui: 0.9375rem;
+  --text-prose: 1.0625rem;
+  --text-overline: 0.6875rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #1b1916;
+    --color-ink: #ece5d8;
+    --color-muted: #a39a8c;
+    --color-line: #3a352e;
+    --color-line-strong: #756d61;
+    --color-accent: #d29a6c;
+    --color-danger: #e0766b;
+  }
+}
+
+html,
+body,
+#root {
+  min-height: 100dvh;
+}
+
+/* viewport-fit=cover: keep content out from under the landscape sensor housing. */
+#root {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+html,
+body {
+  overscroll-behavior: none;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
