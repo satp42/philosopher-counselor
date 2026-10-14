@@ -34,10 +34,11 @@ export default function App() {
 
   // A view swap is a route change: retitle, scroll up, and put focus on the new main so the keyboard isn't stranded.
   useEffect(() => {
-    document.title = `${{ call: "Call", pages: "Your pages", page: "Page" }[view.name]} · Philosopher`;
+    const name = { call: "Call", pages: "Your pages", page: "Page" }[view.name];
+    document.title = auth === "unlocked" ? `${name} · Philosopher` : "Philosopher";
     window.scrollTo(0, 0);
     document.querySelector<HTMLElement>("main")?.focus();
-  }, [view]);
+  }, [view, auth]);
 
   if (auth === "checking") return null;
   if (auth === "locked") return <AccessGate onUnlocked={() => setAuth("unlocked")} />;
