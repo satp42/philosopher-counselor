@@ -31,7 +31,10 @@ def router(store, retriever):
     api = auth.protected_router()
 
     async def fetch(name, call_id, fn, *args) -> dict:
-        await store.require_active(call_id)
+        call = await store.require_active(call_id)
+        # The browser dispatcher already refuses philosophy during crisis. This closes a second client.
+        if call.crisis:
+            raise HTTPException(status_code=403, detail="care-only")
         try:
             return await fn(*args)
         except Exception as e:

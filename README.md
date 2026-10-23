@@ -1,6 +1,6 @@
 # Philosopher Counselor
 
-A real-time philosophical counselor that listens to life dilemmas and examines them through world philosophical traditions grounded in the Stanford Encyclopedia of Philosophy.
+A real-time philosophical counselor that listens to life dilemmas, or takes them in writing, and examines them through world philosophical traditions grounded in the Stanford Encyclopedia of Philosophy.
 
 Built with **Gemini Live Bidirectional Audio** (`gemini-3.8-live-extended-thinking`), a **hybrid lexical-neural retrieval engine** indexing 1,870+ peer-reviewed SEP entries, a **WebAudio pipeline** with custom worklets, and a **self-optimizing contextual bandit** for natural conversational pacing.
 
@@ -75,7 +75,12 @@ Entirely serverless on [Modal](https://modal.com) — zero dedicated servers, sc
 - After each call hangs up, a background worker on Modal analyzes the full session transcript and cited philosophical passages.
 - Produces a structured, beautiful synthesis essay linking the caller's lived dilemma to the underlying philosophical principles, with permanent citation links to the original SEP texts.
 
-### 5. Ethical & Crisis Guardrails
+### 5. Written conversations
+- The start screen offers **Write instead** beside **Start call**. Writing does not open the microphone.
+- A typed session walks the same four phases, encyclopedia lookups, crisis support, and closing page as a voice call. The browser still owns the phase machine and the tool policy. The server answers each turn from a locked persona and writes nothing itself.
+- Text calls are not bandit arms. A voice call that is still learning from spoken pacing is left alone.
+
+### 6. Ethical & Crisis Guardrails
 - Rigorous safety boundaries: `signal_crisis` tool monitors conversational valence.
 - Immediate interruption circuit breaker: halts philosophical speculation and surfaces verified crisis counseling hotlines (e.g., 988 Lifeline).
 - Private-by-design: all transcripts and synthesis pages live on an encrypted, isolated Modal volume accessible only by the authenticated owner.
@@ -92,6 +97,7 @@ Entirely serverless on [Modal](https://modal.com) — zero dedicated servers, sc
 │   ├── auth.py                  # Cryptographic session cookie authentication (HMAC-SHA256)
 │   ├── live_token.py            # Server-locked Gemini Live ephemeral token minting
 │   ├── calls.py                 # Call records, transcript storage & state management
+│   ├── converse.py              # Typed-session replies; the persona and tools stay server-side
 │   ├── bandit.py                # Thompson sampling multi-armed bandit for Live VAD tuning
 │   ├── synthesis.py             # Post-call philosophical synthesis engine
 │   ├── synthesis_job.py         # Modal background task definition for async synthesis

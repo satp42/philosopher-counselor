@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
+import { useStore } from "zustand";
 
 import { fetchJson } from "./api";
 import AccessGate from "./components/AccessGate";
 import CallScreen from "./components/CallScreen";
 import SynthesisList from "./components/SynthesisList";
 import SynthesisPage from "./components/SynthesisPage";
+import TextCallScreen from "./components/TextCallScreen";
 import { useCallEngine } from "./live/useCallEngine";
-import { callStore } from "./state/callStore";
+import { callStore, IN_CALL } from "./state/callStore";
 
 type AuthState = "checking" | "locked" | "unlocked";
 type View = { name: "call" } | { name: "pages" } | { name: "page"; id: string };
@@ -18,6 +20,8 @@ export default function App() {
     unlocked: auth === "unlocked",
     onCallEnded: (id) => setView({ name: "page", id }),
   });
+  const modality = useStore(callStore, (state) => state.modality);
+  const status = useStore(callStore, (state) => state.status);
 
   useEffect(() => {
     fetchJson("/api/session").then(
@@ -56,5 +60,9 @@ export default function App() {
   if (view.name === "pages") return <SynthesisList onOpen={(id) => setView({ name: "page", id })} onBack={backToCall} />;
   if (view.name === "page") return <SynthesisPage key={view.id} id={view.id} onBack={() => setView({ name: "pages" })} />;
 
-  return <CallScreen {...engine} onOpenPages={openPages} />;
+  const { text, ...voice } = engine;
+  if (modality === "text" && (IN_CALL.has(status) || status === "generating")) {
+    return <TextCallScreen engine={text} onOpenPages={openPages} />;
+  }
+  return <CallScreen {...voice} onStartText={() => void text.onStart()} onOpenPages={openPages} />;
 }

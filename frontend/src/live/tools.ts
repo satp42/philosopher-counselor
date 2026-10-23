@@ -32,7 +32,11 @@ interface LensMapResult {
 
 export interface DispatcherDeps {
   store: CallStore;
-  sendToolResponse(responses: ToolResponse[]): void;
+  /**
+   * Hands responses to the model. Call `delivered` once the model has them: voice right after the socket send,
+   * text when the request carrying them succeeds. Cards and the ack wait for it.
+   */
+  sendToolResponse(responses: ToolResponse[], delivered: () => void): void;
   fetchJson(path: string, body: unknown): Promise<any>;
   record(event: RecorderEvent): void;
   notify(message: string): void;
@@ -87,10 +91,11 @@ export function createDispatcher({ store, sendToolResponse, fetchJson, record, n
   function deliver(call: ToolCall, gen: number, response: Record<string, unknown>, cards: Card[] = []) {
     if (!live(call.id, gen)) return;
     drop([call.id]);
-    sendToolResponse([{ id: call.id, name: call.name, response }]);
-    if (!cards.length) return;
-    get().addCards(cards);
-    record({ type: "ack", passage_ids: cards.map((c) => c.passage_id) });
+    sendToolResponse([{ id: call.id, name: call.name, response }], () => {
+      if (!cards.length) return;
+      get().addCards(cards);
+      record({ type: "ack", passage_ids: cards.map((c) => c.passage_id) });
+    });
   }
 
   const handlers: Record<string, (call: ToolCall, gen: number) => void | Promise<void>> = {

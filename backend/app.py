@@ -21,6 +21,7 @@ def web():
     from pathlib import Path
 
     from backend.calls import CallStore
+    from backend.converse import gemini_turn
     from backend.live_token import gemini_client, mint_token
     from backend.web import create_web_app
 
@@ -37,4 +38,5 @@ def web():
         call_store=store,
         mint_token=lambda handle, variant: mint_token(gemini, handle, variant),
         retriever=RetrieverClient(),
+        converse=gemini_turn(gemini),
     )
