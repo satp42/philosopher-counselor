@@ -205,7 +205,8 @@ class RetrieverClient:
         try:
             await self.warming.get.aio(timeout=0)
             return True
-        except modal.exception.TimeoutError:
+        # An unfinished call raises the builtin TimeoutError, not modal.exception.TimeoutError.
+        except (TimeoutError, modal.exception.TimeoutError):
             return False
         except Exception as e:
             print(f"warm failed error={type(e).__name__}")
