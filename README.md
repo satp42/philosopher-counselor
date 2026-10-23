@@ -199,6 +199,13 @@ python -c "import modal; print(modal.Function.from_name('sep-counselor', 'build_
 modal deploy -m backend.app
 ```
 
+### 4. Continuous Deployment
+`.github/workflows/modal-deploy.yml` runs `modal deploy -m backend.app` on every push to `main` (and on manual dispatch from the Actions tab). It needs two repository secrets holding a Modal token:
+```bash
+gh secret set MODAL_TOKEN_ID
+gh secret set MODAL_TOKEN_SECRET
+```
+
 ---
 
 ## Development & Testing
