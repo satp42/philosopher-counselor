@@ -76,4 +76,7 @@ FUNCTION_DECLARATIONS = [
 ]
 
 TOOL_NAMES = [d["name"] for d in FUNCTION_DECLARATIONS]
+ToolName = Literal["update_situation", "map_lenses", "consult_sep", "set_phase", "signal_crisis"]
 TOOLS = [{"function_declarations": [{**d, "behavior": NON_BLOCKING} for d in FUNCTION_DECLARATIONS]}]
+# generateContent rejects Live's NON_BLOCKING behavior flag, so text tools are the same declarations without it.
+TEXT_TOOLS = [{"function_declarations": FUNCTION_DECLARATIONS}]

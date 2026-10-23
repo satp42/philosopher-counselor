@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend import auth
+from backend.calls import VoiceCall
 from backend.guide.config import API_VERSION, DEFAULT_VARIANT, MODEL, live_config
 
 TOKEN_TTL = timedelta(minutes=30)
@@ -48,7 +49,10 @@ def router(store, mint: Callable[[str | None, str], str]) -> APIRouter:
 
     @api.post("/token")
     async def token(body: TokenBody) -> dict:
-        variant = await store.require_active(body.call_id)
+        call = await store.require_active(body.call_id)
+        if not isinstance(call, VoiceCall):
+            raise HTTPException(status_code=409, detail="not a voice call")
+        variant = call.variant
         if mints[body.call_id] >= MAX_MINTS_PER_CALL:
             raise HTTPException(status_code=429, detail="token limit reached for this call")
         mints[body.call_id] += 1  # reserved before the await so concurrent requests can't overshoot

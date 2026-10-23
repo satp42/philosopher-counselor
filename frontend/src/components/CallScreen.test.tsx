@@ -22,6 +22,20 @@ function setup(data: Partial<CallData>) {
 const currentStep = () => screen.getByRole("listitem", { current: "step" });
 
 describe("CallScreen", () => {
+  it("offers writing beside the call, including when the microphone is blocked", async () => {
+    const store = createCallStore({ status: "idle" });
+    const onStartText = vi.fn();
+    const { rerender } = render(<CallScreen store={store} {...{ onStart: vi.fn(), onHangUp: vi.fn(), onToggleMute: vi.fn(), onRetryMic: vi.fn(), onEndStaleCall: vi.fn(), onOpenPages: vi.fn() }} onStartText={onStartText} />);
+    await userEvent.click(screen.getByRole("button", { name: "Write instead" }));
+    expect(onStartText).toHaveBeenCalledOnce();
+
+    store.setState({ status: "micBlocked", callId: "voice-call" });
+    rerender(<CallScreen store={store} onStart={vi.fn()} onHangUp={vi.fn()} onToggleMute={vi.fn()} onRetryMic={vi.fn()} onEndStaleCall={vi.fn()} onOpenPages={vi.fn()} onStartText={onStartText} />);
+    await userEvent.click(screen.getByRole("button", { name: "Write instead" }));
+    expect(store.getState().status).toBe("idle");
+    expect(onStartText).toHaveBeenCalledTimes(2);
+  });
+
   it("starts a call and opens past pages from idle", async () => {
     const { on } = setup({ status: "idle" });
     await userEvent.click(screen.getByRole("button", { name: "Start call" }));

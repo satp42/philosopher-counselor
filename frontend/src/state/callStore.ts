@@ -15,6 +15,7 @@ export type Status =
   | "generating";
 
 export type Connection = "connecting" | "live" | "reconnecting";
+export type Modality = "voice" | "text";
 
 export type Stance = "aligned" | "challenges";
 export type GuidePhase = "listen" | "explore" | "synthesize" | "end";
@@ -64,6 +65,7 @@ const initial = {
   lensPlan: [] as Lens[],
   cards: {} as Record<string, Card[]>,
   archivedCards: [] as Card[],
+  modality: null as Modality | null,
   staleCall: null as { active_id: string; started_at: number } | null,
   crisis: false,
   micLost: false,

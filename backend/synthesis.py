@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from backend.calls import modality_of
+from backend.guide.config import MODALITIES
 from backend.guide.tools import Stance
 from backend.retrieval.chunk import excerpt, is_sep_url
 
@@ -37,12 +39,19 @@ class NotesOut(BaseModel):
     open_questions: list[str]
 
 
-STYLE = """Write plainly and warmly, in the second person ("you"), like notes from a thoughtful friend. No jargon, \
-no markdown, no headings. Never invent quotes or put words in a thinker's mouth; paraphrase. The transcript comes \
-from speech recognition, so names may be misheard: spell thinkers and traditions correctly, using the passage \
-metadata (entry titles) to correct them. The title is 3 to 7 words about their situation."""
+HEARD = {
+    "voice": "The transcript comes from speech recognition, so names may be misheard",
+    "text": "The conversation was typed, so names may be misspelled",
+}
+CONVERSATION = {"voice": "a voice conversation", "text": "a written conversation"}
+assert set(HEARD) == set(CONVERSATION) == set(MODALITIES)
 
-PAGE_TASK = """You are writing the page a person will reread after a voice conversation with a philosophical guide \
+STYLE = """Write plainly and warmly, in the second person ("you"), like notes from a thoughtful friend. No jargon, \
+no markdown, no headings. Never invent quotes or put words in a thinker's mouth; paraphrase. {heard}: spell thinkers \
+and traditions correctly, using the passage metadata (entry titles) to correct them. The title is 3 to 7 words about \
+their situation."""
+
+PAGE_TASK = """You are writing the page a person will reread after {conversation} with a philosophical guide \
 who looked at their situation through several philosophical lenses, grounded in the Stanford Encyclopedia of \
 Philosophy.
 - situation: 2 to 4 sentences on what they are facing and how they lean, as they framed it.
@@ -57,7 +66,7 @@ empty if none fit.
 PARTIAL = """The call ended before the guide finished every lens. Include only lenses the transcript actually \
 discusses, and let the synthesis cover only those."""
 
-NOTES_TASK = """You are writing short situation notes a person will reread after a voice conversation with a \
+NOTES_TASK = """You are writing short situation notes a person will reread after {conversation} with a \
 guide. The conversation ended before any philosophical perspectives were explored, so do not bring in philosophy, \
 thinkers or traditions.
 - situation: what they shared and how they lean, as they framed it, in a short paragraph.
@@ -88,8 +97,16 @@ def _citation(p: dict) -> dict | None:
     }
 
 
+def _wording(record: dict) -> dict[str, str]:
+    medium = modality_of(record)
+    return {"heard": HEARD[medium], "conversation": CONVERSATION[medium]}
+
+
 def _notes(variant: str, record: dict, generate: Generate) -> dict:
-    prompt = "\n\n".join([NOTES_TASK, *([CRISIS] if variant == "crisis" else []), STYLE, _transcript(record)])
+    wording = _wording(record)
+    prompt = "\n\n".join(
+        [NOTES_TASK.format(**wording), *([CRISIS] if variant == "crisis" else []), STYLE.format(**wording), _transcript(record)]
+    )
     out = NotesOut.model_validate(generate(prompt, NotesOut.model_json_schema()))
     return {"variant": variant, **out.model_dump(), "lenses": [], "synthesis": None, "unexplored": []}
 
@@ -119,8 +136,16 @@ def build_page(record: dict, generate: Generate) -> dict:
         f"[{pid}] {p.get('entry_title', '')} > {p.get('section_path', '')}\n{p.get('text') or p.get('excerpt', '')}"
         for pid, p in allowed.items()
     )
+    wording = _wording(record)
     prompt = "\n\n".join(
-        [PAGE_TASK, *([] if full else [PARTIAL]), STYLE, f"LENSES:\n{lenses_text}", f"PASSAGES:\n{passages_text}", _transcript(record)]
+        [
+            PAGE_TASK.format(**wording),
+            *([] if full else [PARTIAL]),
+            STYLE.format(**wording),
+            f"LENSES:\n{lenses_text}",
+            f"PASSAGES:\n{passages_text}",
+            _transcript(record),
+        ]
     )
     out = PageOut.model_validate(generate(prompt, PageOut.model_json_schema()))
 

@@ -5,6 +5,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend import auth, calls, live_token
+from backend.converse import GenerateTurn
 from backend.retrieval import routes as retrieval_routes
 
 
@@ -13,6 +14,7 @@ def create_web_app(
     call_store: calls.CallStore | None = None,
     mint_token: Callable[[str | None, str], str] | None = None,
     retriever=None,
+    converse: GenerateTurn | None = None,
 ) -> FastAPI:
     api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     api.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -34,6 +36,10 @@ def create_web_app(
             api.include_router(live_token.router(call_store, mint_token))
         if retriever:
             api.include_router(retrieval_routes.router(call_store, retriever))
+        if converse:
+            from backend.converse import router as converse_router
+
+            api.include_router(converse_router(call_store, converse))
     # Mounted last so /api routes win.
     if static_dir:
         api.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

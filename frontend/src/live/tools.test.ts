@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ALSO, createCallStore, type Status } from "../state/callStore";
 import { card, deferred, passage } from "../test/factories";
-import { createDispatcher, type Passage } from "./tools";
+import { createDispatcher, type Passage, type ToolResponse } from "./tools";
 
 const forModel = (id: string) => ({
   passage_id: id,
@@ -34,7 +34,7 @@ const lookup = (id: string, args: Record<string, unknown> = { query: "duty" }) =
 
 function setup(status: Status = "listen") {
   const store = createCallStore({ status, callId: "c1", summary: "Job offer abroad", leaning: "stay" });
-  const sendToolResponse = vi.fn();
+  const sendToolResponse = vi.fn((_responses: ToolResponse[], delivered: () => void) => delivered());
   const fetchJson = vi.fn();
   const record = vi.fn();
   const notify = vi.fn();
@@ -298,12 +298,22 @@ describe("tool dispatcher", () => {
   it("acks only after the tool response was sent", async () => {
     const t = setup("explore");
     t.fetchJson.mockResolvedValue({ passages: [passage("p1")] });
-    t.sendToolResponse.mockImplementation(() => {
+    t.sendToolResponse.mockImplementation((_responses: ToolResponse[], delivered: () => void) => {
       expect(t.store.getState().cards).toEqual({});
       expect(t.events("ack")).toEqual([]);
+      delivered();
     });
     await t.dispatcher.dispatch([lookup("q1")]);
     expect(t.events("ack")).toEqual([{ type: "ack", passage_ids: ["p1"] }]);
+  });
+
+  it("does not ack a passage the model never received", async () => {
+    const t = setup("explore");
+    t.fetchJson.mockResolvedValue({ passages: [passage("p1")] });
+    t.sendToolResponse.mockImplementation(() => {});
+    await t.dispatcher.dispatch([lookup("q1")]);
+    expect(t.events("ack")).toEqual([]);
+    expect(t.store.getState().cards).toEqual({});
   });
 
   it("answers an unknown tool with an error", async () => {

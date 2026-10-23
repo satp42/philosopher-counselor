@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { fetchJson } from "../api";
 import { callStore, type CallStore } from "../state/callStore";
+import { createTextEngine } from "../text/engine";
 import { createAudio } from "./audio";
 import { createCallEngine } from "./session";
 
@@ -19,14 +20,17 @@ export function useCallEngine({ unlocked, onCallEnded, store = callStore }: Opti
   useEffect(() => {
     ended.current = onCallEnded;
   });
-  const [engine] = useState(() =>
-    createCallEngine({
+  const [engine] = useState(() => {
+    const notify = (message: string) => toast(message);
+    const voice = createCallEngine({
       store,
       audio: createAudio(),
-      notify: (message) => toast(message),
+      notify,
       onCallEnded: (id) => ended.current?.(id),
-    }),
-  );
+    });
+    const text = createTextEngine({ store, notify });
+    return { voice, text };
+  });
   const [libraryReady, setLibraryReady] = useState<boolean>();
 
   useEffect(() => {
@@ -47,5 +51,10 @@ export function useCallEngine({ unlocked, onCallEnded, store = callStore }: Opti
     };
   }, [unlocked]);
 
-  return { ...engine, libraryReady };
+  return {
+    ...engine.voice,
+    onEndStaleCall: () => (store.getState().modality === "text" ? engine.text : engine.voice).onEndStaleCall(),
+    text: engine.text,
+    libraryReady,
+  };
 }

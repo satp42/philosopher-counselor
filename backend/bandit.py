@@ -31,6 +31,9 @@ def reward(m: dict) -> float | None:
 def pick(records: list[dict], rng=random) -> str:
     rewards: dict[str, list[float]] = {v: [] for v in VARIANTS}
     for rec in records:
+        # Text records are excluded by modality, not by the accident of having no metrics.
+        if rec.get("modality") == "text":
+            continue
         r = reward(rec.get("metrics") or {})
         if r is not None and rec.get("variant") in rewards:
             rewards[rec["variant"]].append(r)

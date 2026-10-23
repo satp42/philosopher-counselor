@@ -72,6 +72,15 @@ def test_full_page_cites_only_allowlisted_sep_passages():
     assert not any(l["own_reading"] for l in page["lenses"])
     prompt, schema = model.calls[0]
     assert "lenses" in schema["properties"] and "[p1] Entry p1" in prompt and "misheard" in prompt
+    assert "a voice conversation" in prompt
+
+
+def test_typed_call_tells_the_page_writer_names_may_be_misspelled():
+    model = Model(NOTES)
+    page = build_page({**record(phases=("listen",), plan=None, acked=[]), "modality": "text"}, model)
+    assert page["variant"] == "situation_notes"
+    assert "misspelled" in model.calls[0][0] and "a written conversation" in model.calls[0][0]
+    assert "misheard" not in model.calls[0][0]
 
 
 def test_citations_outside_allowlist_or_off_sep_are_dropped_and_rest_kept():

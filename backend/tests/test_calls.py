@@ -153,6 +153,14 @@ def test_events_keep_a_call_fresh(env):
     assert env.client.get("/api/calls").json()[0]["status"] == "active"
 
 
+def test_text_call_survives_the_voice_stale_window(env):
+    call_id = env.client.post("/api/calls", json={"modality": "text"}, headers=ORIGIN).json()["id"]
+    env.clock[0] += 16 * 60
+    assert env.client.get("/api/calls").json()[0]["status"] == "active"
+    env.clock[0] += 50 * 60
+    assert get(env, call_id)["status"] == "generating" and get(env, call_id)["flags"]["interrupted"]
+
+
 def test_create_after_stale_call_sweeps_it(env):
     stale = create(env)
     env.clock[0] += 16 * 60

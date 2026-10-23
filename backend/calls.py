@@ -11,6 +11,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -18,11 +19,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from backend import auth, bandit
-from backend.guide.config import DEFAULT_VARIANT
+from backend.guide.config import DEFAULT_VARIANT, MODALITIES, Modality
 
 MAX_BATCH_BYTES = 64 * 1024
 MAX_RECORD_BYTES = 2 * 1024 * 1024
-STALE_AFTER = 15 * 60
+# A typed conversation pauses longer than speech. Either kind still ends as interrupted.
+STALE_AFTER: dict[Modality, int] = {"voice": 15 * 60, "text": 60 * 60}
 STUCK_AFTER = 10 * 60
 _ID = re.compile(r"[0-9a-f]{32}")
 
@@ -78,6 +80,30 @@ class EventBatch(BaseModel):
 
 class EndBody(BaseModel):
     interrupted: bool = False
+
+
+class CreateBody(BaseModel):
+    modality: Modality = "voice"  # a client that posts nothing, or {}, still starts a voice call
+
+
+def modality_of(rec: dict) -> Modality:
+    """Records written before text mode have no field and are voice."""
+    value = rec.get("modality", "voice")
+    return value if value in MODALITIES else "voice"
+
+
+@dataclass(frozen=True)
+class VoiceCall:
+    variant: str
+    crisis: bool
+
+
+@dataclass(frozen=True)
+class TextCall:
+    crisis: bool
+
+
+ActiveCall = VoiceCall | TextCall
 
 
 def _status(rec: dict, synth: dict | None, now: float) -> str:
@@ -162,7 +188,8 @@ class CallStore:
 
     async def _sweep(self, records: list[dict]) -> None:
         for rec in records:
-            if rec["status"] == "active" and self.now() - rec["last_event_at"] > STALE_AFTER:
+            window = STALE_AFTER[modality_of(rec)]
+            if rec["status"] == "active" and self.now() - rec["last_event_at"] > window:
                 await self._end(rec, interrupted=True)
 
     async def _load(self, call_id: str) -> tuple[dict, dict | None]:
@@ -171,7 +198,7 @@ class CallStore:
         await self._sweep([rec])
         return rec, self._synthesis(call_id)
 
-    async def create(self) -> dict:
+    async def create(self, modality: Modality = "voice") -> dict:
         async with self.lock:
             records = self._records()
             await self._sweep(records)
@@ -181,9 +208,12 @@ class CallStore:
                     status_code=409, detail={"active_id": active[0]["id"], "started_at": active[0]["started_at"]}
                 )
             now = self.now()
+            # Text is not an arm: the bandit learns from spoken turn-taking only.
+            variant = bandit.pick(records) if modality == "voice" else None
             rec = {
                 "id": uuid.uuid4().hex,
-                "variant": bandit.pick(records),
+                "modality": modality,
+                "variant": variant,
                 "status": "active",
                 "flags": {"interrupted": False, "crisis": False},
                 "started_at": now,
@@ -201,7 +231,7 @@ class CallStore:
             }
             self._write(rec)
             await self.commit()
-            print(f"call {rec['id']} created variant={rec['variant']}")
+            print(f"call {rec['id']} created modality={modality} variant={variant}")
             return {"id": rec["id"]}
 
     async def append_events(self, call_id: str, events: list[Event]) -> None:
@@ -228,10 +258,14 @@ class CallStore:
             rec["last_event_at"] = self.now()
             self._write(rec)
 
-    async def require_active(self, call_id: str) -> str:
-        """Returns the call's variant, the one its tokens are minted with."""
+    async def require_active(self, call_id: str) -> ActiveCall:
+        """The call is active. Routes read the variant from a voice call and the crisis flag from either."""
         async with self.lock:
-            return self._read_active(call_id).get("variant", DEFAULT_VARIANT)
+            rec = self._read_active(call_id)
+            crisis = bool(rec["flags"].get("crisis"))
+            if modality_of(rec) == "text":
+                return TextCall(crisis)
+            return VoiceCall(rec.get("variant") or DEFAULT_VARIANT, crisis)
 
     async def record_served(
         self, call_id: str, passages: list[dict], lens_plan: list[dict] | None = None, consulted_lens_id: str | None = None
@@ -298,8 +332,8 @@ def router(store: CallStore) -> APIRouter:
     r = auth.protected_router()
 
     @r.post("/calls", status_code=201)
-    async def create_call() -> dict:
-        return await store.create()
+    async def create_call(body: CreateBody | None = None) -> dict:
+        return await store.create((body or CreateBody()).modality)
 
     @r.post("/calls/{call_id}/events", status_code=204)
     async def post_events(call_id: str, request: Request) -> None:

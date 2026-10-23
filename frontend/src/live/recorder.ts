@@ -39,10 +39,15 @@ export function createRecorder({ callId, store, onCallEnded, post = postJson, be
     (turns[role] ??= { text: "", ts: now() }).text += text;
   }
 
+  function turn(role: Role, text: string) {
+    const trimmed = text.trim();
+    if (trimmed) record({ type: "turn", role, text: trimmed, ts: now() });
+  }
+
   function closeTurns() {
     for (const role of ["user", "guide"] as const) {
-      const turn = turns[role];
-      if (turn?.text.trim()) record({ type: "turn", role, text: turn.text.trim(), ts: turn.ts });
+      const open = turns[role];
+      if (open) turn(role, open.text);
       delete turns[role];
     }
   }
@@ -105,6 +110,7 @@ export function createRecorder({ callId, store, onCallEnded, post = postJson, be
 
   return {
     record,
+    turn,
     appendTranscript,
     closeTurn() {
       closeTurns();

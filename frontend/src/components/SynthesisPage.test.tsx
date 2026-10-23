@@ -79,6 +79,13 @@ describe("SynthesisPage", () => {
     expect(screen.queryByText("Perspectives")).toBeNull();
   });
 
+  it("keeps support resources up while a crisis page is still being written", async () => {
+    mockApi({ ...detail("generating"), flags: { crisis: true, interrupted: false } });
+    render(<SynthesisPage id="a" onBack={vi.fn()} />);
+    expect(await screen.findByRole("link", { name: "Call 988" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Writing your page…");
+  });
+
   it("puts support resources first on a crisis page, with no philosophy", async () => {
     mockApi(detail("ready", page({ variant: "crisis", lenses: [], synthesis: null })));
     render(<SynthesisPage id="a" onBack={vi.fn()} />);

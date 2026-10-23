@@ -25,6 +25,13 @@ def test_pick_prefers_the_arm_with_better_rewards():
     assert picks["s1500-brief"] > 180
 
 
+def test_pick_ignores_text_records_even_when_they_carry_voice_metrics():
+    records = [{"modality": "text", "variant": "s1500-brief", "metrics": GOOD}] * 12
+    records += [{"variant": v, "metrics": BAD} for v in VARIANTS] * 6
+    picks = Counter(bandit.pick(records, random.Random(i)) for i in range(200))
+    assert picks["s1500-brief"] < 80
+
+
 def test_pick_explores_every_arm_with_no_data():
     picks = Counter(bandit.pick([], random.Random(i)) for i in range(300))
     assert set(picks) == set(VARIANTS)

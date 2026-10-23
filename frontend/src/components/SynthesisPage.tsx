@@ -25,6 +25,7 @@ interface CallDetail {
   id: string;
   started_at: number;
   status: string;
+  flags?: { crisis: boolean; interrupted: boolean };
   synthesis: { status: string; page?: Page } | null;
 }
 
@@ -189,10 +190,20 @@ export default function SynthesisPage({ id, onBack }: { id: string; onBack(): vo
   if (missing) {
     body = <p className="text-ui text-muted">This page was deleted.</p>;
   } else if (page && call) {
-    body = <PageBody page={page} startedAt={call.started_at} h1={h1} />;
+    body = (
+      <>
+        {call.flags?.crisis && page.variant !== "crisis" && (
+          <div className="mb-12">
+            <Resources />
+          </div>
+        )}
+        <PageBody page={page} startedAt={call.started_at} h1={h1} />
+      </>
+    );
   } else if (call?.status === "failed") {
     body = (
       <div className="flex flex-col items-start gap-4">
+        {call.flags?.crisis && <Resources />}
         <h1 className="font-serif text-3xl text-balance">The page couldn't be written</h1>
         <p className="text-ui leading-relaxed text-muted">Your call is saved. Trying again usually works.</p>
         <button type="button" onClick={retry} className={button({ tone: "primary" })}>
@@ -201,7 +212,12 @@ export default function SynthesisPage({ id, onBack }: { id: string; onBack(): vo
       </div>
     );
   } else if (call) {
-    body = <p className="font-serif text-2xl text-muted motion-safe:animate-pulse">Writing your page…</p>;
+    body = (
+      <div className="space-y-8">
+        {call.flags?.crisis && <Resources />}
+        <p className="font-serif text-2xl text-muted motion-safe:animate-pulse">Writing your page…</p>
+      </div>
+    );
   }
 
   return (

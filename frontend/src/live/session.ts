@@ -1,5 +1,6 @@
 import type { LiveServerMessage, Session } from "@google/genai";
 
+import { closeCall, endStaleCall, keepLibraryWarm, openCall } from "../call/lifecycle";
 import { fetchJson, HttpError } from "../api";
 import type { CallStore } from "../state/callStore";
 import type { AudioIO } from "./audio";
@@ -11,7 +12,6 @@ export const ROTATE_AFTER_MS = 9 * 60_000;
 export const FORCE_ROTATE_MS = 9 * 60_000 + 40_000;
 export const RETRY_WINDOW_MS = 30_000;
 export const SETUP_TIMEOUT_MS = 10_000;
-export const HEARTBEAT_MS = 5 * 60_000;
 export const OPEN_TIMEOUT_MS = 15_000;
 export const GOODBYE_MS = 4_000;
 const HOLD_MAX = (10 * 16_000 * 2 * 4) / 3; // ~10s of 16kHz PCM16, base64
@@ -79,7 +79,8 @@ export function createCallEngine({
   let heldSize = 0;
   let unsubscribe = () => {};
   let timers: ReturnType<typeof setTimeout>[] = [];
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let stopWarm = () => {};
+  const lifecycle = { store, request, notify };
 
   const setMicLost = (micLost: boolean) => store.setState({ micLost });
 
@@ -260,7 +261,7 @@ export function createCallEngine({
     if (ended) return;
     ended = true;
     paused = true;
-    clearInterval(heartbeat);
+    stopWarm();
     unsubscribe();
     if (goodbye) {
       sawIdle = false;
@@ -270,16 +271,14 @@ export function createCallEngine({
     audio.flush();
     audio.closeMic();
     const callId = get().callId!;
-    if (interrupted) {
-      recorder.record({ type: "flag", flag: "interrupted" });
-      notify(notice);
-    }
     store.setState({ consulting: false, micLost: false, muted: false });
-    get().transition("ending");
-    recorder.record({ type: "metrics", metrics: metrics.report() });
-    await recorder.end();
-    await request(`/api/calls/${callId}/end`, { interrupted }).catch((e) => console.warn("call: end failed", e));
-    get().transition("generating");
+    await closeCall(lifecycle, {
+      callId,
+      recorder,
+      interrupted,
+      notice: interrupted ? notice : undefined,
+      metrics: metrics.report(),
+    });
     onCallEnded(callId);
   }
 
@@ -296,7 +295,11 @@ export function createCallEngine({
     recorder = createRecorder({ callId, store, post, onCallEnded: () => void finish(false) });
     dispatcher = createDispatcher({
       store,
-      sendToolResponse: (functionResponses) => session?.sendToolResponse({ functionResponses }),
+      sendToolResponse: (functionResponses, delivered) => {
+        if (!session) return;
+        session.sendToolResponse({ functionResponses });
+        delivered();
+      },
       fetchJson: request,
       record: (e) => recorder.record(e),
       notify,
@@ -304,7 +307,7 @@ export function createCallEngine({
     unsubscribe = store.subscribe((s, prev) => {
       if (s.status === "ending" && prev.status !== "ending") void finish(false, { goodbye: true });
     });
-    heartbeat = setInterval(() => void request("/api/warm", {}).catch(() => {}), HEARTBEAT_MS);
+    stopWarm = keepLibraryWarm(request);
     store.setState({ connection: "connecting" });
     get().transition("connecting");
     if (!(await connectWithRetry())) return;
@@ -318,19 +321,8 @@ export function createCallEngine({
     if (busy || get().status !== "idle") return;
     busy = true;
     try {
-      let callId = get().callId;
-      if (!callId) {
-        try {
-          ({ id: callId } = await request("/api/calls", {}));
-        } catch (e) {
-          if (e instanceof HttpError && e.status === 409) {
-            store.setState({ staleCall: e.body.detail });
-            get().transition("staleCall");
-          } else notify("Couldn't start a call. Try again.");
-          return;
-        }
-        store.setState({ callId });
-      }
+      const callId = await openCall(lifecycle, "voice");
+      if (!callId) return;
       try {
         await audio.openMic(sendAudio, setMicLost);
       } catch {
@@ -345,14 +337,7 @@ export function createCallEngine({
 
   async function onEndStaleCall() {
     audio.unlock();
-    const stale = get().staleCall;
-    if (!stale) return;
-    try {
-      await request(`/api/calls/${stale.active_id}/end`, { interrupted: true });
-    } catch (e) {
-      if (!(e instanceof HttpError && e.status === 404)) return notify("Couldn't end the open call. Try again.");
-    }
-    store.setState({ staleCall: null });
+    if (!(await endStaleCall(lifecycle))) return;
     get().transition("idle");
     await onStart();
   }

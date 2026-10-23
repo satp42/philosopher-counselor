@@ -85,9 +85,16 @@ export interface CallScreenProps {
   onRetryMic(): void;
   onEndStaleCall(): void;
   onOpenPages(): void;
+  /** Idle and mic-blocked screens. Typing never opens the microphone. */
+  onStartText?(): void;
 }
 
 export default function CallScreen({ store = defaultStore, getLevels, libraryReady, ...on }: CallScreenProps) {
+  function handleWrite() {
+    if (!on.onStartText) return;
+    if (store.getState().status === "micBlocked") store.getState().transition("idle");
+    on.onStartText();
+  }
   const state = useStore(store, useShallow(pick));
   const { status, reconnecting, crisis, muted, micLost, lensPlan, cards, staleCall } = state;
   const text = caption(state);
@@ -186,20 +193,25 @@ export default function CallScreen({ store = defaultStore, getLevels, libraryRea
         {status === "staleCall" && staleCall ? (
           <StaleCallPrompt startedAt={staleCall.started_at} onEnd={on.onEndStaleCall} />
         ) : status === "micBlocked" ? (
-          <MicCheck variant="blocked" onRetry={on.onRetryMic} />
+          <MicCheck variant="blocked" onRetry={on.onRetryMic} onWrite={on.onStartText ? handleWrite : undefined} />
         ) : (
           <div className="flex max-w-md flex-col items-center gap-8 text-center">
             <div className="space-y-3">
               <h1 className="font-serif text-4xl leading-tight tracking-tight text-balance">What's on your mind?</h1>
               <p className="text-ui leading-relaxed text-pretty text-muted">
-                Talk it through. When it helps, we'll look at it through a few philosophical perspectives, drawn from the
-                Stanford Encyclopedia of Philosophy.
+                Talk it through, or write it out. When it helps, we'll look at it through a few philosophical perspectives,
+                drawn from the Stanford Encyclopedia of Philosophy.
               </p>
             </div>
             <div className="flex flex-col items-center gap-3">
               <button type="button" onClick={on.onStart} className={button({ tone: "primary", size: "lg" })}>
                 Start call
               </button>
+              {on.onStartText && (
+                <button type="button" onClick={on.onStartText} className={button({ tone: "quiet", size: "lg" })}>
+                  Write instead
+                </button>
+              )}
               <button type="button" onClick={on.onOpenPages} className={button({ tone: "ghost" })}>
                 Your pages
               </button>
