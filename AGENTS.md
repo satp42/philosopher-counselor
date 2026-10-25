@@ -37,8 +37,11 @@ When adding or changing a call modality:
 ## Running checks
 
 ```bash
+uv sync
 uv run pytest -q backend/tests
 cd frontend && npm test -- --run
 ```
+
+Python pins live in `pyproject.toml` / `uv.lock` (keep aligned with `backend/modal_app.py` for deploy).
 
 CI runs the same on push and pull requests to `main`.
