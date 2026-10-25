@@ -13,7 +13,7 @@ auth_secret = modal.Secret.from_name("app-auth")
 
 PYTHON = "3.13"
 
-WEB_DEPS = ["fastapi==0.143.0", "pydantic==2.14.1", "google-genai==2.30.1"]
+WEB_DEPS = ["fastapi==0.143.0", "pydantic==2.14.1", "google-genai==2.30.1", "authlib==1.9.1"]
 TEST_DEPS = ["pytest==9.1.1", "httpx==0.28.1"]
 CORPUS_DEPS = ["requests==2.34.2", "beautifulsoup4==4.15.0", "lxml==6.1.3"]
 RETRIEVAL_CPU_DEPS = [

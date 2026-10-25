@@ -153,7 +153,7 @@ def env(tmp_path, app_env):
     client = TestClient(create_web_app(call_store=store), base_url="https://testserver")
     call_id = login_and_call(client)
     client.post(f"/api/calls/{call_id}/end", headers=ORIGIN)
-    return client, store.root / call_id, store.spawned, clock
+    return client, store.tenant_dir() / call_id, store.spawned, clock
 
 
 def test_model_error_fails_then_retry_reaches_ready_without_touching_record(env, capsys):
@@ -203,3 +203,14 @@ def test_job_writes_nothing_for_a_call_deleted_mid_generation(env):
 
     run(call_dir, generate, lambda: None, lambda: None)
     assert not call_dir.exists()
+
+
+def test_synthesis_ready_records_page_in_tenant_memory(env):
+    client, call_dir, _, _ = env
+    assert run(call_dir, Model(NOTES), lambda: None, lambda: None) == "ready"
+    mem = client.get("/api/memory").json()
+    assert len(mem["entries"]) == 1
+    assert mem["entries"][0]["call_id"] == call_dir.name
+    assert mem["entries"][0]["title"] == "Notes"
+    assert mem["entries"][0]["summary"] == "s"
+    assert mem["entries"][0]["open_questions"] == ["q?"]

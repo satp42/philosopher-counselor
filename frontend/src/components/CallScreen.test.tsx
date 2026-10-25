@@ -44,6 +44,26 @@ describe("CallScreen", () => {
     expect(on.onOpenPages).toHaveBeenCalledOnce();
   });
 
+  it("renders sign out with the account name when provided on idle", async () => {
+    const store = createCallStore({ status: "idle" });
+    const onSignOut = vi.fn();
+    render(
+      <CallScreen
+        store={store}
+        accountName="Ada Lovelace"
+        onSignOut={onSignOut}
+        onStart={vi.fn()}
+        onHangUp={vi.fn()}
+        onToggleMute={vi.fn()}
+        onRetryMic={vi.fn()}
+        onEndStaleCall={vi.fn()}
+        onOpenPages={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sign out (Ada Lovelace)" }));
+    expect(onSignOut).toHaveBeenCalledOnce();
+  });
+
   it("announces phase and connection changes in a polite live region", () => {
     const { store } = setup({ status: "listen" });
     const region = screen.getByRole("status");

@@ -69,7 +69,7 @@ def test_text_call_runs_through_converse_lens_map_and_the_page(tmp_path, app_env
     created = client.post("/api/calls", json={"modality": "text"}, headers=ORIGIN)
     assert created.status_code == 201
     call_id = created.json()["id"]
-    record = json.loads((store.root / call_id / "record.json").read_text())
+    record = json.loads((store.tenant_dir() / call_id / "record.json").read_text())
     assert record["modality"] == "text" and record["variant"] is None
     assert client.post("/api/token", json={"call_id": call_id}, headers=ORIGIN).status_code == 409
 
@@ -82,7 +82,7 @@ def test_text_call_runs_through_converse_lens_map_and_the_page(tmp_path, app_env
     reply = first.json()
     assert reply["kind"] == "reply" and reply["calls"][0]["id"] == "call-1"
     assert _unmemo(reply["memo"])["parts"][1]["thought_signature"] == "sig-1"
-    assert json.loads((store.root / call_id / "record.json").read_text())["turns"] == []
+    assert json.loads((store.tenant_dir() / call_id / "record.json").read_text())["turns"] == []
 
     mapped = client.post("/api/lens-map", json={"call_id": call_id, "lenses": LENSES}, headers=ORIGIN)
     assert mapped.status_code == 200
@@ -123,7 +123,7 @@ def test_text_call_runs_through_converse_lens_map_and_the_page(tmp_path, app_env
         prompts.append(prompt)
         return {"title": "A promise", "situation": "s", "open_questions": ["q?"]}
 
-    page = build_page(json.loads((store.root / call_id / "record.json").read_text()), page_model)
+    page = build_page(json.loads((store.tenant_dir() / call_id / "record.json").read_text()), page_model)
     assert page["variant"] == "situation_notes"
     assert "written conversation" in prompts[0] and "misspelled" in prompts[0]
     assert "My sister asked me to co-sign." in prompts[0]
@@ -189,3 +189,51 @@ def test_memo_round_trips_a_thought_signature_and_assigns_missing_ids():
     assert rendered[1]["parts"][0]["thought_signature"] == "abc"
     assert "id" not in rendered[2]["parts"][0]["function_response"]
     assert _reply(None, 1).kind == "withheld"
+
+
+def test_account_tenant_memory_is_passed_to_subsequent_calls_and_isolated(tmp_path, app_env):
+    memories = []
+
+    async def generate(contents, memory=None):
+        memories.append(memory)
+        return {"role": "model", "parts": [{"text": "Welcome back."}]}
+
+    client, _ = app(tmp_path, generate)
+    first_call = client.post("/api/calls", json={"modality": "text"}, headers=ORIGIN).json()["id"]
+    client.post(
+        f"/api/calls/{first_call}/events",
+        json={"events": [{"seq": 1, "type": "summary", "summary": "Considering leaving law firm", "leaning": "leave"}]},
+        headers=ORIGIN,
+    )
+    client.post(f"/api/calls/{first_call}/end", headers=ORIGIN)
+    client.put("/api/memory", json={"notes": ["Prefers existentialist framing"]}, headers=ORIGIN)
+
+    second_call = client.post("/api/calls", json={"modality": "text"}, headers=ORIGIN).json()["id"]
+    res = client.post(
+        "/api/converse",
+        json={"call_id": second_call, "history": [{"kind": "user", "text": "Hello again."}]},
+        headers=ORIGIN,
+    )
+    assert res.status_code == 200
+    assert memories[-1] is not None
+    assert "Considering leaving law firm" in memories[-1]
+    assert "Prefers existentialist framing" in memories[-1]
+
+    # Another tenant cannot converse on second_call and starts with empty memory.
+    other = TestClient(client.app, base_url="https://testserver")
+    login(other, sub="other-tenant")
+    assert (
+        other.post(
+            "/api/converse",
+            json={"call_id": second_call, "history": [{"kind": "user", "text": "Hijack"}]},
+            headers=ORIGIN,
+        ).status_code
+        == 404
+    )
+    other_call = other.post("/api/calls", json={"modality": "text"}, headers=ORIGIN).json()["id"]
+    other.post(
+        "/api/converse",
+        json={"call_id": other_call, "history": [{"kind": "user", "text": "First time here."}]},
+        headers=ORIGIN,
+    )
+    assert memories[-1] is None

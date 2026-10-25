@@ -1,4 +1,5 @@
 import time
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,27 +10,80 @@ from backend.web import create_web_app
 
 
 @pytest.fixture
-def client(app_env):
-    return TestClient(create_web_app(), base_url="https://testserver")
+def setup(app_env):
+    exchanged = []
+
+    def exchange(code: str, verifier: str, redirect_uri: str) -> dict:
+        exchanged.append((code, verifier, redirect_uri))
+        if code == "explode":
+            raise RuntimeError("upstream token exchange failed")
+        if code == "no-sub":
+            return {"email": "nobody@example.com"}
+        return {"sub": f"oauth-user-{code}", "email": f"{code}@example.com", "name": f"User {code}"}
+
+    client = TestClient(create_web_app(oauth_exchange=exchange), base_url="https://testserver")
+    return client, exchanged
 
 
-def test_correct_passphrase_sets_hardened_cookie_and_unlocks_session(client):
-    r = login(client)
-    assert r.status_code == 204
-    cookie = r.headers["set-cookie"].lower()
-    for attr in ("httponly", "secure", "samesite=strict", "max-age=2592000"):
-        assert attr in cookie
-    assert client.get("/api/session").status_code == 204
+def test_oauth_login_redirects_with_pkce_and_callback_sets_tenant_session(setup):
+    client, exchanged = setup
+    r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code == 302
+    loc = urlsplit(r.headers["location"])
+    assert (loc.scheme, loc.netloc) == ("https", "accounts.google.com")
+    params = parse_qs(loc.query)
+    assert params["client_id"] == ["test-client-id"]
+    assert params["code_challenge_method"] == ["S256"]
+    assert params["code_challenge"]
+    state = params["state"][0]
+    assert auth.OAUTH_COOKIE in client.cookies
+
+    cb = client.get(f"/api/auth/callback?code=alice&state={state}", follow_redirects=False)
+    assert cb.status_code == 302
+    assert cb.headers["location"] == "/"
+    cookie = cb.headers.get_list("set-cookie")
+    session_header = next(h.lower() for h in cookie if auth.COOKIE in h)
+    for attr in ("httponly", "secure", "samesite=lax", "max-age=2592000"):
+        assert attr in session_header
+    assert len(exchanged) == 1
+    assert exchanged[0][0] == "alice" and len(exchanged[0][1]) >= 43
+
+    sess = client.get("/api/session")
+    assert sess.status_code == 200
+    assert sess.json() == {
+        "tenant_id": auth.tenant_id_for("oauth-user-alice"),
+        "sub": "oauth-user-alice",
+        "email": "alice@example.com",
+        "name": "User alice",
+    }
 
 
-def test_wrong_passphrase_is_401_without_cookie(client):
-    r = login(client, "nope")
-    assert r.status_code == 401
-    assert "set-cookie" not in r.headers
+def test_callback_rejects_mismatched_state_or_missing_cookie_or_provider_error(setup):
+    client, exchanged = setup
+    r = client.get("/api/auth/login", follow_redirects=False)
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+
+    assert client.get(f"/api/auth/callback?code=alice&state=wrong-state").status_code == 401
+    assert client.get(f"/api/auth/callback?error=access_denied&state={state}").status_code == 401
+    assert client.get(f"/api/auth/callback?code=explode&state={state}").status_code == 401
+    assert client.get(f"/api/auth/callback?code=no-sub&state={state}").status_code == 401
+    client.cookies.clear()
+    assert client.get(f"/api/auth/callback?code=alice&state={state}").status_code == 401
+    assert client.get("/api/session").status_code == 401
+    assert len(exchanged) == 2
+
+
+def test_logout_clears_session_and_requires_same_origin(setup):
+    client, _ = setup
+    login(client, sub="alice")
+    assert client.get("/api/session").status_code == 200
+    assert client.post("/api/auth/logout", headers={"origin": "https://evil.example"}).status_code == 403
+    assert client.post("/api/auth/logout", headers=ORIGIN).status_code == 204
     assert client.get("/api/session").status_code == 401
 
 
-def test_tampered_cookie_is_rejected(client):
+def test_tampered_cookie_is_rejected(setup):
+    client, _ = setup
     login(client)
     value = client.cookies.get(auth.COOKIE)
     client.cookies.clear()
@@ -53,36 +107,30 @@ def test_garbage_cookie_values_are_rejected():
         assert not auth.verify_session(value, b"k", time.time())
 
 
-def test_sixth_wrong_attempt_is_rate_limited_even_with_right_passphrase(client):
-    for _ in range(auth.MAX_FAILS):
-        assert login(client, "wrong").status_code == 401
-    assert login(client, "wrong").status_code == 429
-    assert login(client).status_code == 429
+def test_missing_origin_needs_same_origin_fetch_metadata(setup):
+    client, _ = setup
+    assert client.post("/api/auth/logout", headers={}).status_code == 403
+    assert client.post("/api/auth/logout", headers={"sec-fetch-site": "same-origin"}).status_code == 204
 
 
-def test_foreign_origin_on_mutating_route_is_403(client):
-    assert login(client, headers={"origin": "https://evil.example"}).status_code == 403
-
-
-def test_missing_origin_needs_same_origin_fetch_metadata(client):
-    assert login(client, headers={}).status_code == 403
-    assert login(client, headers={"sec-fetch-site": "same-origin"}).status_code == 204
-
-
-def test_docs_and_openapi_are_disabled(client):
+def test_docs_and_openapi_are_disabled(setup):
+    client, _ = setup
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 404
 
 
-def test_protected_router_requires_session_and_origin(client):
+def test_protected_router_requires_session_and_origin_and_binds_tenant(setup):
+    client, _ = setup
     router = auth.protected_router()
 
-    @router.post("/ping", status_code=204)
-    def ping() -> None:
-        pass
+    @router.post("/ping")
+    def ping() -> dict:
+        return {"tenant": auth.current_tenant()}
 
     client.app.include_router(router)
     assert client.post("/api/ping", headers=ORIGIN).status_code == 401
-    login(client)
-    assert client.post("/api/ping", headers=ORIGIN).status_code == 204
+    login(client, sub="tenant-alpha")
+    r = client.post("/api/ping", headers=ORIGIN)
+    assert r.status_code == 200
+    assert r.json() == {"tenant": auth.tenant_id_for("tenant-alpha")}
     assert client.post("/api/ping", headers={"origin": "https://evil.example"}).status_code == 403

@@ -53,19 +53,29 @@ for _modality in MODALITIES:
     _render(_modality)
 
 
-def system_instruction(modality: Modality, brief: bool = False) -> str:
+def system_instruction(modality: Modality, brief: bool = False, memory: str | None = None) -> str:
     """The persona for one medium. The listen-length addendum belongs to voice arms only."""
     text = _render(modality)
     if modality == "voice" and brief:
         text += BRIEF
+    if memory:
+        text += (
+            "\n\n# Memory\n\n"
+            "Earlier context from this person's account (use lightly when relevant; let what they share now lead):\n"
+            f"{memory}"
+        )
     return text
 
 
-def live_config(resumption_handle: str | None = None, variant: str = DEFAULT_VARIANT) -> dict:
+def live_config(
+    resumption_handle: str | None = None,
+    variant: str = DEFAULT_VARIANT,
+    memory: str | None = None,
+) -> dict:
     arm = VARIANTS[variant]
     return {
         "response_modalities": ["AUDIO"],
-        "system_instruction": system_instruction("voice", arm["brief"]),
+        "system_instruction": system_instruction("voice", arm["brief"], memory=memory),
         "tools": TOOLS,
         "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": VOICE}}},
         "thinking_config": {"thinking_level": THINKING_LEVEL},
@@ -77,10 +87,10 @@ def live_config(resumption_handle: str | None = None, variant: str = DEFAULT_VAR
     }
 
 
-def text_config() -> dict:
+def text_config(memory: str | None = None) -> dict:
     """Locked generateContent config for a typed reply: persona, tools, and thinking. No bandit arm."""
     return {
-        "system_instruction": system_instruction("text"),
+        "system_instruction": system_instruction("text", memory=memory),
         "tools": TEXT_TOOLS,
         "thinking_config": {"thinking_level": THINKING_LEVEL},
         "automatic_function_calling": {"disable": True},

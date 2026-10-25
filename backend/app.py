@@ -38,12 +38,12 @@ def web():
         Path(f"{DATA}/calls"),
         commit=volume.commit.aio,
         reload=volume.reload.aio,
-        spawn_synthesis=lambda call_id: start_synthesis.spawn.aio(call_id),
+        spawn_synthesis=lambda call_id, tenant_id: start_synthesis.spawn.aio(call_id, tenant_id),
     )
     return create_web_app(
         static_dir="/app/frontend/dist",
         call_store=store,
-        mint_token=lambda handle, variant: mint_token(gemini, handle, variant),
+        mint_token=lambda handle, variant, memory=None: mint_token(gemini, handle, variant, memory=memory),
         retriever=RetrieverClient(),
         converse=gemini_turn(gemini),
     )

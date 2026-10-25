@@ -19,7 +19,7 @@ def env(tmp_path, app_env):
     store = make_store(tmp_path, now=lambda: clock[0])
     client = TestClient(create_web_app(call_store=store), base_url="https://testserver")
     login(client)
-    return SimpleNamespace(store=store, clock=clock, spawned=store.spawned, client=client, root=store.root)
+    return SimpleNamespace(store=store, clock=clock, spawned=store.spawned, client=client, root=store.tenant_dir())
 
 
 def turns(start, n, text="t"):
@@ -282,3 +282,41 @@ def test_status_ignores_a_synthesis_file_from_an_earlier_attempt():
     rec = {"status": "ending", "spawned_at": 1000.0, "attempts": 2}
     assert _status(rec, {"status": "failed", "attempt": 1}, 1060.0) == "generating"
     assert _status(rec, {"status": "ready", "attempt": 2}, 1060.0) == "ready"
+
+
+def test_conversations_and_memory_are_isolated_per_account_tenant(env):
+    alice = TestClient(env.client.app, base_url="https://testserver")
+    bob = TestClient(env.client.app, base_url="https://testserver")
+    login(alice, sub="alice@example.com", email="alice@example.com", name="Alice")
+    login(bob, sub="bob@example.com", email="bob@example.com", name="Bob")
+
+    alice_call = alice.post("/api/calls", headers=ORIGIN).json()["id"]
+    # Alice's active call does not block Bob from starting his own call.
+    bob_resp = bob.post("/api/calls", headers=ORIGIN)
+    assert bob_resp.status_code == 201
+    bob_call = bob_resp.json()["id"]
+
+    assert [c["id"] for c in alice.get("/api/calls").json()] == [alice_call]
+    assert [c["id"] for c in bob.get("/api/calls").json()] == [bob_call]
+    assert bob.get(f"/api/calls/{alice_call}").status_code == 404
+    assert bob.post(f"/api/calls/{alice_call}/events", json=turns(1, 1), headers=ORIGIN).status_code == 404
+    assert bob.delete(f"/api/calls/{alice_call}", headers=ORIGIN).status_code == 404
+
+    # Alice records a situation summary and tenant memory notes; Bob's memory stays empty.
+    alice.post(
+        f"/api/calls/{alice_call}/events",
+        json={"events": [{"seq": 1, "type": "summary", "summary": "Weighing a move to Berlin", "leaning": "go"}]},
+        headers=ORIGIN,
+    )
+    assert alice.put("/api/memory", json={"notes": ["Values autonomy and family ties"]}, headers=ORIGIN).status_code == 200
+    alice_mem = alice.get("/api/memory").json()
+    assert alice_mem["notes"] == ["Values autonomy and family ties"]
+    assert len(alice_mem["entries"]) == 1
+    assert alice_mem["entries"][0]["summary"] == "Weighing a move to Berlin"
+    assert bob.get("/api/memory").json() == {"notes": [], "entries": [], "updated_at": None}
+
+    # Deleting Alice's call removes its entry from Alice's tenant memory.
+    alice.delete(f"/api/calls/{alice_call}", headers=ORIGIN)
+    assert alice.get("/api/memory").json()["entries"] == []
+    assert alice.delete("/api/memory", headers=ORIGIN).status_code == 204
+    assert alice.get("/api/memory").json()["notes"] == []

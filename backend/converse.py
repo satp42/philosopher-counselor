@@ -5,9 +5,10 @@ call record, so the recorder stays the only sequence producer and a retry of the
 """
 
 import base64
-import json
 from collections import Counter
 from collections.abc import Awaitable, Callable
+import inspect
+import json
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -22,7 +23,7 @@ MAX_BODY_BYTES = 1024 * 1024
 MAX_TURNS_PER_CALL = 240
 
 # Gemini contents -> the model's turn as a content dict, or None when nothing showable came back.
-GenerateTurn = Callable[[list[dict]], Awaitable[dict | None]]
+GenerateTurn = Callable[..., Awaitable[dict | None]]
 
 
 class UserItem(BaseModel):
@@ -179,6 +180,7 @@ def router(store: CallStore, generate: GenerateTurn) -> APIRouter:
     """POST /api/converse. Does not check crisis: during care the model must keep answering."""
     api = auth.protected_router()
     turns: Counter[str] = Counter()
+    takes_memory = len(inspect.signature(generate).parameters) >= 2
 
     @api.post("/converse")
     async def converse(request: Request) -> dict:
@@ -200,7 +202,7 @@ def router(store: CallStore, generate: GenerateTurn) -> APIRouter:
             raise HTTPException(status_code=422, detail="invalid history")
         guide_turns = sum(isinstance(item, GuideItem) for item in parsed.history)
         try:
-            content = await generate(contents)
+            content = await (generate(contents, call.memory) if takes_memory else generate(contents))
         except Exception as exc:
             print(f"converse failed call={parsed.call_id} error={type(exc).__name__}")
             raise HTTPException(status_code=502, detail="guide unavailable") from None
@@ -213,11 +215,11 @@ def router(store: CallStore, generate: GenerateTurn) -> APIRouter:
 def gemini_turn(client) -> GenerateTurn:
     """Real generator. Returns the first candidate's content, or None when the reply was blocked or empty."""
 
-    async def generate(contents: list[dict]) -> dict | None:
+    async def generate(contents: list[dict], memory: str | None = None) -> dict | None:
         response = await client.aio.models.generate_content(
             model=TEXT_MODEL,
             contents=contents,
-            config=text_config(),
+            config=text_config(memory=memory),
         )
         candidates = getattr(response, "candidates", None) or []
         if not candidates or candidates[0].content is None:
