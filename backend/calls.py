@@ -25,6 +25,7 @@ MAX_BATCH_BYTES = 64 * 1024
 MAX_RECORD_BYTES = 2 * 1024 * 1024
 # A typed conversation pauses longer than speech. Either kind still ends as interrupted.
 STALE_AFTER: dict[Modality, int] = {"voice": 15 * 60, "text": 60 * 60}
+assert set(STALE_AFTER) == set(MODALITIES), "add a stale window when adding a modality"
 STUCK_AFTER = 10 * 60
 _ID = re.compile(r"[0-9a-f]{32}")
 
