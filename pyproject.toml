@@ -1,0 +1,33 @@
+[project]
+name = "philosopher-counselor"
+version = "0.1.0"
+description = "Philosopher Counselor backend and tests"
+readme = "README.md"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "fastapi==0.143.0",
+    "pydantic==2.14.1",
+    "google-genai==2.30.1",
+    "modal==1.3.0",
+    "requests==2.34.2",
+    "beautifulsoup4==4.15.0",
+    "lxml==6.1.3",
+    "numpy==2.5.4",
+    "scipy==1.18.1",
+    "bm25s==0.3.13",
+    "PyStemmer==3.1.0",
+    "rapidfuzz==3.14.6",
+    "jellyfish==1.2.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "httpx==0.28.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+
+[tool.uv]
+package = false

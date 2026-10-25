@@ -7,6 +7,7 @@ import CallScreen from "./components/CallScreen";
 import SynthesisList from "./components/SynthesisList";
 import SynthesisPage from "./components/SynthesisPage";
 import TextCallScreen from "./components/TextCallScreen";
+import { documentTitle } from "./documentTitle";
 import { useCallEngine } from "./live/useCallEngine";
 import { callStore, IN_CALL } from "./state/callStore";
 
@@ -38,8 +39,7 @@ export default function App() {
 
   // A view swap is a route change: retitle, scroll up, and put focus on the new main so the keyboard isn't stranded.
   useEffect(() => {
-    const name = { call: "Call", pages: "Your pages", page: "Page" }[view.name];
-    document.title = auth === "unlocked" ? `${name} · Philosopher` : "Philosopher";
+    document.title = documentTitle(view.name, auth);
     window.scrollTo(0, 0);
     document.querySelector<HTMLElement>("main")?.focus();
   }, [view, auth]);
