@@ -7,8 +7,10 @@ from backend.modal_app import DATA, _python_base, _with_backend, app, gemini_sec
 
 
 @app.function(image=_with_backend(_python_base), secrets=[gemini_secret], volumes={DATA: volume}, timeout=300)
-def start_synthesis(call_id: str) -> None:
+def start_synthesis(call_id: str, tenant_id: str | None = None) -> None:
+    from backend.auth import DEFAULT_TENANT
     from backend.live_token import gemini_client
     from backend.synthesis import gemini_generate, run
 
-    run(Path(DATA) / "calls" / call_id, gemini_generate(gemini_client()), volume.commit, volume.reload)
+    tid = tenant_id or DEFAULT_TENANT
+    run(Path(DATA) / "calls" / tid / call_id, gemini_generate(gemini_client()), volume.commit, volume.reload)

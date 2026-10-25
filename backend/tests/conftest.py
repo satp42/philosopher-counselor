@@ -1,4 +1,6 @@
 import asyncio
+import os
+import time
 
 import pytest
 
@@ -8,14 +10,13 @@ from backend.corpus import SEP
 from backend.retrieval.chunk import excerpt
 
 ORIGIN = {"origin": "https://testserver"}
-PASSPHRASE = "correct horse battery staple 42"
 
 
 @pytest.fixture
 def app_env(monkeypatch):
-    monkeypatch.setenv("APP_PASSPHRASE", PASSPHRASE)
+    monkeypatch.setenv("OAUTH_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "test-client-secret")
     monkeypatch.setenv("APP_SIGNING_KEY", "k" * 64)
-    auth.reset_rate_limits()
 
 
 async def _yield():
@@ -33,12 +34,15 @@ def make_store(tmp_path, **kw) -> CallStore:
     return store
 
 
-def login(client, passphrase=PASSPHRASE, headers=ORIGIN):
-    return client.post("/api/login", json={"passphrase": passphrase}, headers=headers)
+def login(client, sub: str = auth.DEFAULT_SUB, email: str | None = "person@example.com", name: str | None = "Person"):
+    key = os.environ["APP_SIGNING_KEY"].encode()
+    token = auth.sign_session(int(time.time()), key, sub=sub, email=email, name=name)
+    client.cookies.set(auth.COOKIE, token, domain="testserver.local", path="/")
+    return client
 
 
-def login_and_call(client) -> str:
-    login(client)
+def login_and_call(client, sub: str = auth.DEFAULT_SUB) -> str:
+    login(client, sub=sub)
     r = client.post("/api/calls", headers=ORIGIN)
     assert r.status_code == 201
     return r.json()["id"]

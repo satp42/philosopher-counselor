@@ -12,9 +12,10 @@ from backend.retrieval import routes as retrieval_routes
 def create_web_app(
     static_dir: str | None = None,
     call_store: calls.CallStore | None = None,
-    mint_token: Callable[[str | None, str], str] | None = None,
+    mint_token: Callable[..., str] | None = None,
     retriever=None,
     converse: GenerateTurn | None = None,
+    oauth_exchange: auth.ExchangeCode | None = None,
 ) -> FastAPI:
     api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     api.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -29,7 +30,7 @@ def create_web_app(
             response.headers["Cache-Control"] = "no-cache"
         return response
 
-    api.include_router(auth.router)
+    api.include_router(auth.build_router(oauth_exchange) if oauth_exchange else auth.router)
     if call_store:
         api.include_router(calls.router(call_store))
         if mint_token:

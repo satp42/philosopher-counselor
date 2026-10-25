@@ -94,9 +94,9 @@ Entirely serverless on [Modal](https://modal.com) — zero dedicated servers, sc
 ├── backend/
 │   ├── app.py                   # Modal app definition, container images & web endpoints
 │   ├── modal_app.py             # Infrastructure declaration and dependency layers
-│   ├── auth.py                  # Cryptographic session cookie authentication (HMAC-SHA256)
+│   ├── auth.py                  # OAuth 2.0 + PKCE authentication (Authlib) & signed tenant cookies
 │   ├── live_token.py            # Server-locked Gemini Live ephemeral token minting
-│   ├── calls.py                 # Call records, transcript storage & state management
+│   ├── calls.py                 # Account-tenant call records, transcript storage & tenant memory
 │   ├── converse.py              # Typed-session replies; the persona and tools stay server-side
 │   ├── bandit.py                # Thompson sampling multi-armed bandit for Live VAD tuning
 │   ├── synthesis.py             # Post-call philosophical synthesis engine
@@ -130,7 +130,7 @@ Entirely serverless on [Modal](https://modal.com) — zero dedicated servers, sc
 │   │   │   ├── CrisisPanel.tsx  # Safety circuit breaker and crisis resource modal
 │   │   │   ├── SynthesisPage.tsx# Post-call reflection essay and reading list
 │   │   │   ├── SynthesisList.tsx# Call history and archive of past consultations
-│   │   │   └── AccessGate.tsx   # Password authentication barrier
+│   │   │   └── AccessGate.tsx   # OAuth sign-in screen
 │   │   ├── live/
 │   │   │   ├── session.ts       # Gemini Live WebSocket protocol and turn manager
 │   │   │   ├── audio.ts         # AudioContext coordinator and AudioWorklet loader
@@ -171,12 +171,10 @@ Create the required environment secrets inside Modal:
 # 1. Google Gemini API Key
 modal secret create gemini GEMINI_API_KEY='your-gemini-api-key'
 
-# 2. Authentication Passphrase & Cryptographic Signing Key
-PASS=$(openssl rand -base64 24)
-echo "Your app passphrase is: $PASS"   # Store securely in your password manager
-
+# 2. OAuth 2.0 Client Credentials & Cryptographic Signing Key
 modal secret create app-auth \
-  APP_PASSPHRASE="$PASS" \
+  OAUTH_CLIENT_ID="your-oauth-client-id" \
+  OAUTH_CLIENT_SECRET="your-oauth-client-secret" \
   APP_SIGNING_KEY="$(openssl rand -hex 32)"
 ```
 
@@ -240,20 +238,25 @@ Detailed ablation results and tuning history are documented in [`docs/retrieval-
 
 ## API Reference
 
-All `/api` endpoints require an authenticated session cookie obtained via `/api/login`. State-modifying requests (`POST`, `DELETE`) require a matching `Origin` header.
+All `/api` endpoints require an authenticated OAuth session cookie (`sc_session`) obtained via `/api/auth/login` and `/api/auth/callback`. Every authenticated account is mapped to an isolated tenant directory on the Modal volume (`<DATA>/calls/<tenant_id>/`), scoping all conversations, synthesis pages, bandit pacing history, and persistent account memory (`memory.json`) to that account tenant. State-modifying requests (`POST`, `PUT`, `DELETE`) require a matching `Origin` header.
 
 ### Authentication
 ```bash
 APP="https://<your-workspace>--sep-counselor-web.modal.run"
 
-# Log in and save session cookie
-curl -s -c cookies.txt -H "Origin: $APP" -H "Content-Type: application/json" \
-  -d "{\"passphrase\": \"$APP_PASSPHRASE\"}" "$APP/api/login"
+# Initiate OAuth 2.0 Authorization Code + PKCE flow in the browser
+open "$APP/api/auth/login"
+
+# Inspect the active account session
+curl -s -b cookies.txt "$APP/api/session"
+
+# Sign out and clear the session cookie
+curl -s -b cookies.txt -H "Origin: $APP" -X POST "$APP/api/auth/logout"
 ```
 
-### Managing Calls & Transcripts
+### Managing Account Tenant Conversations & Memory
 ```bash
-# List all calls (ordered newest to oldest)
+# List all calls for the signed-in account tenant (ordered newest to oldest)
 curl -s -b cookies.txt "$APP/api/calls"
 
 # Retrieve full record for a specific call (including transcript and synthesis page)
@@ -262,8 +265,18 @@ curl -s -b cookies.txt "$APP/api/calls/<CALL_ID>"
 # Regenerate a failed synthesis essay
 curl -s -b cookies.txt -H "Origin: $APP" -X POST "$APP/api/calls/<CALL_ID>/retry"
 
-# Permanently delete a call, transcript, and associated synthesis page
+# Permanently delete a call, transcript, synthesis page, and its tenant memory entry
 curl -s -b cookies.txt -H "Origin: $APP" -X DELETE "$APP/api/calls/<CALL_ID>"
+
+# Read account-tenant memory (notes + distilled past conversation context)
+curl -s -b cookies.txt "$APP/api/memory"
+
+# Update account-tenant memory notes
+curl -s -b cookies.txt -H "Origin: $APP" -H "Content-Type: application/json" \
+  -X PUT -d '{"notes": ["Values autonomy and long-term commitments"]}' "$APP/api/memory"
+
+# Clear account-tenant memory
+curl -s -b cookies.txt -H "Origin: $APP" -X DELETE "$APP/api/memory"
 ```
 
 ---

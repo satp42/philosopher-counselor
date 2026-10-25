@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from backend.calls import modality_of
+from backend.calls import modality_of, sync_call_to_memory
 from backend.guide.config import MODALITIES
 from backend.guide.tools import Stance
 from backend.retrieval.chunk import excerpt, is_sep_url
@@ -187,6 +187,8 @@ def run(call_dir: Path, generate: Generate, commit: Callable[[], None], reload: 
             tmp = call_dir / "synthesis.tmp"
             tmp.write_text(json.dumps({**data, "attempt": attempt}))
             os.replace(tmp, call_dir / "synthesis.json")
+            if data.get("status") == "ready" and data.get("page"):
+                sync_call_to_memory(call_dir.parent, record, page=data["page"])
             commit()
 
     write(status="generating")

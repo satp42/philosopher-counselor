@@ -77,3 +77,25 @@ def test_failed_mints_do_not_use_up_the_cap(setup):
         assert client.post("/api/token", json={"call_id": call_id}, headers=ORIGIN).status_code == 200
     assert client.post("/api/token", json={"call_id": call_id}, headers=ORIGIN).status_code == 429
     assert len(minted) == 3 + MAX_MINTS_PER_CALL
+
+
+def test_token_is_isolated_per_tenant_and_forwards_tenant_memory(app_env, tmp_path):
+    from backend.tests.conftest import login
+
+    seen_memory = []
+
+    def mint(handle, variant, memory=None):
+        seen_memory.append(memory)
+        return "auth_tokens/fake"
+
+    store = make_store(tmp_path)
+    client = TestClient(create_web_app(call_store=store, mint_token=mint), base_url="https://testserver")
+    login(client, sub="alice")
+    client.put("/api/memory", json={"notes": ["Thinking about career change"]}, headers=ORIGIN)
+    call_id = client.post("/api/calls", headers=ORIGIN).json()["id"]
+    assert client.post("/api/token", json={"call_id": call_id}, headers=ORIGIN).status_code == 200
+    assert seen_memory == ["\n".join(["- Note: Thinking about career change"])]
+
+    bob = TestClient(client.app, base_url="https://testserver")
+    login(bob, sub="bob")
+    assert bob.post("/api/token", json={"call_id": call_id}, headers=ORIGIN).status_code == 404

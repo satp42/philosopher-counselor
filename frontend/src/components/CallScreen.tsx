@@ -79,6 +79,7 @@ export interface CallScreenProps {
   store?: CallStore;
   getLevels?: () => Levels;
   libraryReady?: boolean;
+  accountName?: string;
   onStart(): void;
   onHangUp(): void;
   onToggleMute(): void;
@@ -87,9 +88,10 @@ export interface CallScreenProps {
   onOpenPages(): void;
   /** Idle and mic-blocked screens. Typing never opens the microphone. */
   onStartText?(): void;
+  onSignOut?(): void;
 }
 
-export default function CallScreen({ store = defaultStore, getLevels, libraryReady, ...on }: CallScreenProps) {
+export default function CallScreen({ store = defaultStore, getLevels, libraryReady, accountName, ...on }: CallScreenProps) {
   function handleWrite() {
     if (!on.onStartText) return;
     if (store.getState().status === "micBlocked") store.getState().transition("idle");
@@ -215,6 +217,11 @@ export default function CallScreen({ store = defaultStore, getLevels, libraryRea
               <button type="button" onClick={on.onOpenPages} className={button({ tone: "ghost" })}>
                 Your pages
               </button>
+              {on.onSignOut && (
+                <button type="button" onClick={on.onSignOut} className={button({ tone: "ghost" })}>
+                  {accountName ? `Sign out (${accountName})` : "Sign out"}
+                </button>
+              )}
             </div>
             {libraryReady !== undefined && (
               <p className="flex items-center gap-2 text-xs text-muted">

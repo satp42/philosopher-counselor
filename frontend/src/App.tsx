@@ -13,8 +13,16 @@ import { callStore, IN_CALL } from "./state/callStore";
 type AuthState = "checking" | "locked" | "unlocked";
 type View = { name: "call" } | { name: "pages" } | { name: "page"; id: string };
 
+export interface SessionAccount {
+  tenant_id: string;
+  sub: string;
+  email: string | null;
+  name: string | null;
+}
+
 export default function App() {
   const [auth, setAuth] = useState<AuthState>("checking");
+  const [account, setAccount] = useState<SessionAccount | null>(null);
   const [view, setView] = useState<View>({ name: "call" });
   const engine = useCallEngine({
     unlocked: auth === "unlocked",
@@ -25,7 +33,10 @@ export default function App() {
 
   useEffect(() => {
     fetchJson("/api/session").then(
-      () => setAuth("unlocked"),
+      (session: SessionAccount | null) => {
+        setAccount(session);
+        setAuth("unlocked");
+      },
       () => setAuth("locked"),
     );
   }, []);
@@ -45,7 +56,7 @@ export default function App() {
   }, [view, auth]);
 
   if (auth === "checking") return null;
-  if (auth === "locked") return <AccessGate onUnlocked={() => setAuth("unlocked")} />;
+  if (auth === "locked") return <AccessGate />;
 
   function openPages() {
     const { status, callId } = callStore.getState();
@@ -57,6 +68,14 @@ export default function App() {
     setView({ name: "call" });
   }
 
+  async function handleSignOut() {
+    await fetchJson("/api/auth/logout", {}).catch(() => {});
+    callStore.getState().reset();
+    setAccount(null);
+    setView({ name: "call" });
+    setAuth("locked");
+  }
+
   if (view.name === "pages") return <SynthesisList onOpen={(id) => setView({ name: "page", id })} onBack={backToCall} />;
   if (view.name === "page") return <SynthesisPage key={view.id} id={view.id} onBack={() => setView({ name: "pages" })} />;
 
@@ -64,5 +83,13 @@ export default function App() {
   if (modality === "text" && (IN_CALL.has(status) || status === "generating")) {
     return <TextCallScreen engine={text} onOpenPages={openPages} />;
   }
-  return <CallScreen {...voice} onStartText={() => void text.onStart()} onOpenPages={openPages} />;
+  return (
+    <CallScreen
+      {...voice}
+      accountName={account?.name || account?.email || undefined}
+      onSignOut={handleSignOut}
+      onStartText={() => void text.onStart()}
+      onOpenPages={openPages}
+    />
+  );
 }
